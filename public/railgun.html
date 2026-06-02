@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>バーチャル教室</title>
+  <!-- A-Frameライブラリの読み込み -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body { margin: 0; }
+    #ui-controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+    }
+    .ui-button {
+      padding: 10px 20px;
+      margin: 5px;
+      border: none;
+      background-color: #007BFF;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .ui-button:hover {
+      background-color: #0056b3;
+    }
+    /* チャットボックスのスタイル */
+    #chat-container {
+     position: fixed;
+     top: 0;
+     right: 0;
+     width: 300px;
+     height: 100%;
+     background-color: rgba(245, 245, 245, 0.5);
+     border-left: 1px solid #ccc;
+     display: flex;
+     flex-direction: column;
+     z-index: 1000;
+    }
+    #chat-header {
+     background-color: #007BFF;
+     color: white;
+     padding: 10px;
+     text-align: center;
+     font-weight: bold;
+    }
+    #chat-messages {
+     flex: 1;
+     padding: 10px;
+     overflow-y: auto;
+    }
+
+    #chat-form {
+     display: flex;
+     border-top: 1px solid #ccc;
+    }
+
+    #chat-input {
+     flex: 1;
+     padding: 10px;
+     border: none;
+     outline: none;
+    }
+
+    #chat-form button {
+     padding: 10px;
+     border: none;
+     background-color: #007BFF;
+     color: white;
+     cursor: pointer;
+    }
+
+    #chat-form button:hover {
+     background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <!-- UI Controller -->
+  <div id="ui-controls">
+    <button class="ui-button" id="imageButton">画像を表示</button>
+    <button class="ui-button" id="changeSpaceButton">森へ行く</button>
+    <button class="ui-button" id="goToMovieTheaterButton">映画館へ行く</button> 
+    <button class="ui-button" id="goToRoomButton">部屋へ行く</button>
+    <button class="ui-button" id="goToCafeButton">カフェへ行く</button>
+    <button class="ui-button" id="returnClassroomButton">教室に戻る</button> 
+  </div>
+
+  <!-- A-Frameのシーン -->
+  <a-scene>
+    <!-- アセットの定義 -->
+    <a-assets>
+      <!-- 教室のモデル -->
+      <a-asset-item id="classroom-model" src="models/japanese_classroom.glb"></a-asset-item>
+      <!-- 森のモデル -->
+      <a-asset-item id="new-space-model" src="models/low_poly_tree_scene_free.glb"></a-asset-item>
+      <!-- 映画館のモデル　-->
+      <a-asset-item id="movie-theatre-model" src="models/cinemamovie_theater_interior/scene.gltf"></a-asset-item> <!-- パスを修正 -->
+      <!-- 部屋のモデル -->
+      <a-asset-item id="room-model" src="models/cozy_living_room_baked.glb"></a-asset-item> 
+      <!-- カフェのモデル -->
+      <a-asset-item id="cafe-model" src="models/luiz_ieda_-_salao_cafe.glb"></a-asset-item> 
+      <!-- 動画ファイル -->
+      <video id="classroom-video" src="classroomvideo.mp4" playsinline autoplay muted crossorigin="anonymous" controls></video>
+      <!-- 画像ファイル -->
+      <img id="classroom-image" src="classroomimage.jpg">
+    </a-assets>
+
+    
+    <!-- 背景の色を水色に -->
+    <a-sky color="#87CEEB"></a-sky>
+
+    <!-- 教室のモデルを配置 -->
+    <a-entity
+      id="classroom"
+      gltf-model="#classroom-model"
+      position="0 0 0"
+      scale="1 1 1">
+    </a-entity>
+
+    <!-- 森のモデルを配置（最初は非表示） -->
+    <a-entity
+      id="new-space"
+      gltf-model="#new-space-model"
+      position="0 0 0"
+      scale="1 1 1"
+      visible="false">
+    </a-entity>
+
+    <!-- 映画館のモデルを配置（最初は非表示） -->
+    <a-entity
+      id="movie-theatre"
+      gltf-model="#movie-theatre-model"
+      position="24 0 -73.5"
+      rotation="0 90 0"
+      scale="1 1 1"
+      visible="false">
+    </a-entity>
+
+    <!-- 部屋のモデルを配置（最初は非表示） -->
+    <a-entity
+      id="room"
+      gltf-model="#room-model"
+      position="-1.3 0 -3.2"
+      scale="1 1 1"
+      visible="false">
+    </a-entity>
+
+    <!-- カフェのモデルを配置（最初は非表示） -->
+    <a-entity
+      id="cafe"
+      gltf-model="#cafe-model"
+      rotation="0 180 0"
+      position="-1.6 0.5 -4.7"
+      scale="0.0075 0.0075 0.0075"
+      visible="false">
+    </a-entity>
+
+    <!-- ユーザーのカメラとコントローラー -->
+    <a-entity 
+      id="me"
+      moving
+      camera
+      wasd-controls="acceleration: 20"
+      look-controls
+      position="0 1.6 0">
+    </a-entity>
+
+    <!-- 地面の設定 -->
+    <a-plane
+      rotation="-90 0 0"
+      width="100"
+      height="100"
+      color="#000"
+      visible="false">
+    </a-plane>
+
+    <!-- 照明の設定 -->
+    <a-entity light="type: ambient; color: #FFFFFF; intensity: 0.5"></a-entity>
+    <a-entity light="type: directional; color: #FFFFFF; intensity: 1" position="0 10 -10"></a-entity>
+
+    <!-- スクリーンに動画を表示 -->
+    <a-plane
+      id="myScreen"
+      src="classroomimage.jpg"
+      position="1 1.94 -4" 
+      width="4" 
+      height="2" 
+      rotation="0 -90 0" 
+      material="shader: flat; src: #classroom-image; visible: false">
+    </a-plane>
+  </a-scene>
+
+  <div id="testForm">
+    <h2>テストフォーム</h2>
+    <form onsubmit="submitForm(event)">
+      <label for="answer">回答を入力してください:</label>
+      <input type="text" id="answer" name="answer" required>
+      <button type="submit">送信</button>
+    </form>
+    <p id="result"></p>
+  </div>
+  <!-- JavaScriptでボタンの動作を実装 -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const videoEl = document.querySelector('#classroom-video');
+      const imageButton = document.querySelector('#imageButton');
+      const playButton = document.querySelector('#playButton');
+      const pauseButton = document.querySelector('#pauseButton');
+      const changeSpaceButton = document.querySelector('#changeSpaceButton');
+      const goToMovieTheaterButton = document.querySelector('#goToMovieTheaterButton');
+      const goToRoomButton = document.querySelector('#goToRoomButton');
+      const goToCafeButton = document.querySelector('#goToCafeButton');
+      const returnClassroomButton = document.querySelector('#returnClassroomButton');
+
+
+      // 画像を表示するボタンのクリックイベント
+      imageButton.addEventListener('click', () => {
+        showImage();
+      });
+
+      // 「森へ行く」ボタンのクリックイベント
+      changeSpaceButton.addEventListener('click', () => {
+        // 教室モデルを非表示に
+        const classroom = document.querySelector('#classroom');
+        classroom.setAttribute('visible', 'false');
+        // 他の空間を非表示に
+        const movieTheatre = document.querySelector('#movie-theatre');
+        movieTheatre.setAttribute('visible', 'false');
+        const room = document.querySelector('#room');
+        room.setAttribute('visible', 'false');
+        const cafe = document.querySelector('#cafe');
+        cafe.setAttribute('visible', 'false');
+        // 森のモデルを表示
+        const newSpace = document.querySelector('#new-space');
+        newSpace.setAttribute('visible', 'true');
+        // プレイヤーの位置をリセット
+        const player = document.querySelector('#player');
+        player.setAttribute('position', '0 1.6 0');
+      });
+
+      // 「映画館へ行く」ボタンのクリックイベント
+      goToMovieTheaterButton.addEventListener('click', () => {
+        // 教室モデルを非表示に
+        const classroom = document.querySelector('#classroom');
+        classroom.setAttribute('visible', 'false');
+        // 他の空間を非表示に
+        const newSpace = document.querySelector('#new-space');
+        newSpace.setAttribute('visible', 'false');
+        const room = document.querySelector('#room');
+        room.setAttribute('visible', 'false');
+        const cafe = document.querySelector('#cafe');
+        cafe.setAttribute('visible', 'false');
+        // 映画館のモデルを表示
+        const movieTheatre = document.querySelector('#movie-theatre');
+        movieTheatre.setAttribute('visible', 'true');
+        // プレイヤーの位置をリセット（映画館内の開始位置を指定）
+        const player = document.querySelector('#player');
+        player.setAttribute('position', '0 1.6 0');
+      });
+
+      // 「部屋へ行く」ボタンのクリックイベント
+      goToRoomButton.addEventListener('click', () => {
+        // 教室モデルを非表示に
+        const classroom = document.querySelector('#classroom');
+        classroom.setAttribute('visible', 'false');
+        // 他の空間を非表示に
+        const movieTheatre = document.querySelector('#movie-theatre');
+        movieTheatre.setAttribute('visible', 'false');
+        const newSpace = document.querySelector('#new-space');
+        newSpace.setAttribute('visible', 'false');
+        const cafe = document.querySelector('#cafe');
+        cafe.setAttribute('visible', 'false');
+        // 部屋のモデルを表示
+        const room = document.querySelector('#room');
+        room.setAttribute('visible', 'true');
+        // プレイヤーの位置をリセット
+        const player = document.querySelector('#player');
+        player.setAttribute('position', '0 1.6 0');
+      });
+
+      // 「カフェへ行く」ボタンのクリックイベント
+      goToCafeButton.addEventListener('click', () => {
+        // 教室モデルを非表示に
+        const classroom = document.querySelector('#classroom');
+        classroom.setAttribute('visible', 'false');
+        // 他の空間を非表示に
+        const movieTheatre = document.querySelector('#movie-theatre');
+        movieTheatre.setAttribute('visible', 'false');
+        const newSpace = document.querySelector('#new-space');
+        newSpace.setAttribute('visible', 'false');
+        const room = document.querySelector('#room');
+        room.setAttribute('visible', 'false');
+        // カフェのモデルを表示
+        const cafe = document.querySelector('#cafe');
+        cafe.setAttribute('visible', 'true');
+        // プレイヤーの位置をリセット
+        const player = document.querySelector('#player');
+        player.setAttribute('position', '0 1.6 0');
+      });
+
+      // 「教室に戻る」ボタンのクリックイベント
+      returnClassroomButton.addEventListener('click', () => {
+        // 教室モデルを表示
+        const classroom = document.querySelector('#classroom');
+        classroom.setAttribute('visible', 'true');
+        // 他の空間を非表示に
+        const newSpace = document.querySelector('#new-space');
+        newSpace.setAttribute('visible', 'false');
+        const movieTheatre = document.querySelector('#movie-theatre');
+        movieTheatre.setAttribute('visible', 'false');
+        const room = document.querySelector('#room');
+        room.setAttribute('visible', 'false');
+        const cafe = document.querySelector('#cafe');
+        cafe.setAttribute('visible', 'false');
+        // プレイヤーの位置をリセット（教室内の開始位置を指定）
+        const player = document.querySelector('#player');
+        player.setAttribute('position', '-1 1.6 -2');
+        player.setAttribute('rotation', '0 -90 0');
+      });
+    });
+  </script>
+  <script>
+    function showImage() {
+      // スクリーンを表示
+      const screen = document.querySelector('#myScreen');
+      screen.setAttribute('material', 'visible', true);
+      
+      // 20秒後にスクリーンを非表示
+      setTimeout(() => {
+        screen.setAttribute('material', 'visible', false);
+        
+        // さらに2分(120秒)後にテストフォームを表示
+        setTimeout(() => {
+          document.getElementById('testForm').style.display = 'block';
+        }, 120000); // 120000 ミリ秒 = 2分
+
+      }, 20000); // 20000 ミリ秒 = 20秒
+    }
+
+    // フォーム送信時の処理
+    function submitForm(event) {
+      event.preventDefault(); // ページリロード防止
+
+      const answerValue = document.getElementById('answer').value;
+      // ここで入力データを取得して何らかの処理を行う
+      // 例: 取得データを画面に表示
+      document.getElementById('result').textContent = `あなたの回答: ${answerValue}`;
+      
+      // ここでサーバーに送信する、など他の処理を行える
+    }
+  </script>
+  <script>
+    // Socket.IOを初期化
+    const socket = io();
+
+    // 自分のソケットIDを取得
+    let myId = null;
+    socket.on('connect', () => {
+      myId = socket.id;
+      console.log(`Connected with ID: ${myId}`);
+    });
+
+    // 自分の位置情報をサーバーに送信するコンポーネント
+    AFRAME.registerComponent("moving", {
+      init: function () {
+        this.interval = 100; // 送信間隔（ミリ秒）
+        this.previousPosition = new THREE.Vector3();
+        this.previousTime = 0; // 初期化
+        this.entity = this.el; // A-Frameのエンティティを取得
+      },
+
+      tick: function (time) {
+        if (time - this.previousTime <= this.interval) return;
+
+        let currentPosition = this.entity.object3D.position;
+        if (currentPosition.distanceTo(this.previousPosition) > 0.01) {
+          socket.emit("send_my_pos", { position: currentPosition });
+          this.previousPosition.copy(currentPosition);
+        }
+
+        this.previousTime = time; // 時間を更新
+      },
+    });
+
+    // 他のユーザーの位置情報を受信してアバターを作成・更新
+    socket.on("update_your_pos", (msg) => {
+      let other_user_id = msg[0];
+      let other_user_position = msg[1];
+
+      // 自分自身は無視
+      if (other_user_id === myId) return;
+
+      let otherPlayer = document.getElementById(other_user_id);
+      if (!otherPlayer) {
+        // 新規にアバターを作成
+        let other_body = document.createElement("a-sphere");
+        other_body.setAttribute("id", other_user_id);
+        other_body.setAttribute("position", `${other_user_position.x} ${other_user_position.y} ${other_user_position.z}`);
+        other_body.setAttribute("radius", "0.5");
+        other_body.setAttribute("color", "red");
+        document.querySelector("a-scene").appendChild(other_body);
+      } else {
+        // 既存のアバターの位置を更新
+        otherPlayer.setAttribute("position", `${other_user_position.x} ${other_user_position.y} ${other_user_position.z}`);
+      }
+    });
+
+    // 他のユーザーが切断した際にアバターを削除
+    socket.on("remove_user", (user_id) => {
+      const userElement = document.getElementById(user_id);
+      if (userElement) {
+        userElement.parentNode.removeChild(userElement);
+      }
+    });
+
+    const video = document.querySelector('#classroom-video');
+
+    // 動画のメタデータがロードされたら再生を準備
+    video.addEventListener('loadedmetadata', () => {
+      video.currentTime = 0;
+      video.pause();
+    });
+
+    // 動画のコントロールイベントをサーバーに送信
+    function emitVideoControl(eventType, data) {
+      socket.emit('video-control', {
+        eventType: eventType,
+        currentTime: data.currentTime,
+        paused: video.paused
+      });
+    }
+
+    // ユーザーの操作をキャプチャ
+    video.addEventListener('play', () => {
+      emitVideoControl('play', { currentTime: video.currentTime });
+    });
+
+    video.addEventListener('pause', () => {
+      emitVideoControl('pause', { currentTime: video.currentTime });
+    });
+
+    // サーバーからの動画制御イベントを受信
+    socket.on('video-control', (data) => {
+      switch (data.eventType) {
+        case 'play':
+          video.currentTime = data.currentTime;
+          if (video.paused) {
+            video.play();
+          }
+          break;
+        case 'pause':
+          video.currentTime = data.currentTime;
+          if (!video.paused) {
+            video.pause();
+          }
+          break;
+      }
+    });
+  </script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const chatForm = document.getElementById('chat-form');
+      const chatInput = document.getElementById('chat-input');
+      const chatMessages = document.getElementById('chat-messages');
+    
+      chatForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const userMessage = chatInput.value.trim();
+        if (userMessage === '') return;
+    
+        // ユーザーのメッセージを表示
+        appendMessage('あなた', userMessage);
+        chatInput.value = '';
+    
+        try {
+        // サーバーにメッセージを送信し、応答を受け取る
+        const response = await fetch('http://localhost:3000/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ message: userMessage }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // AIからの応答を表示
+          appendMessage('AI', data.message);
+        } else {
+          appendMessage('システム', 'エラーが発生しました。');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        appendMessage('システム', 'サーバーに接続できませんでした。');
+      }
+    });
+    
+      function appendMessage(sender, message) {
+        const messageElement = document.createElement('div');
+        messageElement.innerHTML = `<strong>${sender}:</strong> ${message}`;
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    });
+  </script>
+
+</body>
+</html>
