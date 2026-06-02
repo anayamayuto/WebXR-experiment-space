@@ -1,0 +1,12 @@
+.vscode/
+.env
+public/models/
+public/testspace/
+node_modules/
+.DS_Store
+public/class_video.mp4
+public/classroomimage.jpg
+public/classroomvideo.mp4
+public/video.mp4
+package-lock.json
+package.json
