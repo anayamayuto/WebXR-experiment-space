@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>バーチャル教室</title>
+  <!-- A-Frameライブラリの読み込み -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body { margin: 0; }
+    #ui-controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+    }
+    .ui-button {
+      padding: 10px 20px;
+      margin: 5px;
+      border: none;
+      background-color: #007BFF;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .ui-button:hover {
+      background-color: #0056b3;
+    }
+    /* チャットボックスのスタイル */
+    #chat-container {
+     position: fixed;
+     top: 0;
+     right: 0;
+     width: 300px;
+     height: 100%;
+     background-color: rgba(245, 245, 245, 0.5);
+     border-left: 1px solid #ccc;
+     display: flex;
+     flex-direction: column;
+     z-index: 1000;
+    }
+    #chat-header {
+     background-color: #007BFF;
+     color: white;
+     padding: 10px;
+     text-align: center;
+     font-weight: bold;
+    }
+    #chat-messages {
+     flex: 1;
+     padding: 10px;
+     overflow-y: auto;
+    }
+
+    #chat-form {
+     display: flex;
+     border-top: 1px solid #ccc;
+    }
+
+    #chat-input {
+     flex: 1;
+     padding: 10px;
+     border: none;
+     outline: none;
+    }
+
+    #chat-form button {
+     padding: 10px;
+     border: none;
+     background-color: #007BFF;
+     color: white;
+     cursor: pointer;
+    }
+
+    #chat-form button:hover {
+     background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui-controls">
+    <button id="add-seat" class="ui-button">座席登録</button>
+    <input id="dummy-count" type="number" value="5" min="1" max="30" style="width:50px"/>
+    <button id="spawn-dummies" class="ui-button">受講者追加</button>
+  </div>
+
+  <div id="coords" 
+       style="position: absolute; top: 10px; left: 10px; 
+              background: rgba(0,0,0,0.5); color: #fff; padding: 4px;">
+    x:0.00 y:0.00 z:0.00
+  </div>
+
+  <!-- A-Frameのシーン -->
+  <a-scene>
+    <!-- アセットの定義 -->
+    <a-assets>
+      <!-- 教室のモデル -->
+      <a-asset-item id="classroom-model" src="models/japanese_classroom.glb"></a-asset-item>
+    </a-assets>
+
+    <!-- 教室のモデルを配置 -->
+    <a-entity
+      id="classroom"
+      gltf-model="#classroom-model"
+      position="0 0 0"
+      scale="1 1 1">
+    </a-entity>
+
+    <!-- ユーザーのカメラとコントローラー -->
+    <a-entity 
+      id="me"
+      moving
+      camera
+      wasd-controls="acceleration: 20"
+      look-controls
+      position="0 1.6 0">
+    </a-entity>
+
+    <a-entity 
+      id="me" 
+      camera 
+      wasd-controls="acceleration:20" 
+      look-controls 
+      moving 
+      clamp-position
+      track-position  
+      position="0 1.6 0">
+    </a-entity>
+
+    <!-- 地面の設定 -->
+    <a-plane
+      rotation="-90 0 0"
+      width="100"
+      height="100"
+      color="#000"
+      visible="false">
+    </a-plane>
+
+    <!-- 照明の設定 -->
+    <a-entity light="type: ambient; color: #FFFFFF; intensity: 0.5"></a-entity>
+    <a-entity light="type: directional; color: #FFFFFF; intensity: 1" position="0 10 -10"></a-entity>
+  </a-scene>
+
+  <script>
+    // Socket.IOを初期化
+    const socket = io();
+
+    // 自分のソケットIDを取得
+    let myId = null;
+    socket.on('connect', () => {
+      myId = socket.id;
+      console.log(`Connected with ID: ${myId}`);
+    });
+
+    // 自分の位置情報をサーバーに送信するコンポーネント
+    AFRAME.registerComponent("moving", {
+      init: function () {
+        this.interval = 100; // 送信間隔（ミリ秒）
+        this.previousPosition = new THREE.Vector3();
+        this.previousTime = 0; // 初期化
+        this.entity = this.el; // A-Frameのエンティティを取得
+      },
+
+      tick: function (time) {
+        if (time - this.previousTime <= this.interval) return;
+
+        let currentPosition = this.entity.object3D.position;
+        if (currentPosition.distanceTo(this.previousPosition) > 0.01) {
+          socket.emit("send_my_pos", { position: currentPosition });
+          this.previousPosition.copy(currentPosition);
+        }
+
+        this.previousTime = time; // 時間を更新
+      },
+    });
+
+    // 他のユーザーの位置情報を受信してアバターを作成・更新
+    socket.on("update_your_pos", (msg) => {
+      let other_user_id = msg[0];
+      let other_user_position = msg[1];
+
+      // 自分自身は無視
+      if (other_user_id === myId) return;
+
+      let otherPlayer = document.getElementById(other_user_id);
+      if (!otherPlayer) {
+        // 新規にアバターを作成
+        let other_body = document.createElement("a-sphere");
+        other_body.setAttribute("id", other_user_id);
+        other_body.setAttribute("position", `${other_user_position.x} ${other_user_position.y} ${other_user_position.z}`);
+        other_body.setAttribute("radius", "0.5");
+        other_body.setAttribute("color", "red");
+        document.querySelector("a-scene").appendChild(other_body);
+      } else {
+        // 既存のアバターの位置を更新
+        otherPlayer.setAttribute("position", `${other_user_position.x} ${other_user_position.y} ${other_user_position.z}`);
+      }
+    });
+
+    // 他のユーザーが切断した際にアバターを削除
+    socket.on("remove_user", (user_id) => {
+      const userElement = document.getElementById(user_id);
+      if (userElement) {
+        userElement.parentNode.removeChild(userElement);
+      }
+    });
+
+    const video = document.querySelector('#classroom-video');
+
+    // 動画のメタデータがロードされたら再生を準備
+    video.addEventListener('loadedmetadata', () => {
+      video.currentTime = 0;
+      video.pause();
+    });
+
+    // 動画のコントロールイベントをサーバーに送信
+    function emitVideoControl(eventType, data) {
+      socket.emit('video-control', {
+        eventType: eventType,
+        currentTime: data.currentTime,
+        paused: video.paused
+      });
+    }
+
+    // ユーザーの操作をキャプチャ
+    video.addEventListener('play', () => {
+      emitVideoControl('play', { currentTime: video.currentTime });
+    });
+
+    video.addEventListener('pause', () => {
+      emitVideoControl('pause', { currentTime: video.currentTime });
+    });
+
+    // サーバーからの動画制御イベントを受信
+    socket.on('video-control', (data) => {
+      switch (data.eventType) {
+        case 'play':
+          video.currentTime = data.currentTime;
+          if (video.paused) {
+            video.play();
+          }
+          break;
+        case 'pause':
+          video.currentTime = data.currentTime;
+          if (!video.paused) {
+            video.pause();
+          }
+          break;
+      }
+    });
+  </script>
+
+  <script>
+  // 1) ゆらゆら揺れるコンポーネント
+  AFRAME.registerComponent('idle-animation', {
+    schema: {
+      amplitude: {type: 'number', default: 0.1},  // 上下振幅
+      speed:     {type: 'number', default: 1}     // 速さ
+    },
+    init: function () {
+      this.baseY = this.el.object3D.position.y;
+    },
+    tick: function (time) {
+      const dy = this.data.amplitude * Math.sin(time / 1000 * this.data.speed);
+      this.el.object3D.position.y = this.baseY + dy;
+    }
+  });
+
+  // 2) ランダム位置取得（教室の範囲に合わせて数値を変えてください）
+  function getRandomPosition() {
+    const x = (Math.random() * 8 - 4).toFixed(2);  // -4 〜 +4
+    const z = (Math.random() * 6 - 3).toFixed(2);  // -3 〜 +3
+    const y = 0.5;                                // 座高
+    return {x, y, z};
+  }
+
+  // 3) ダミーアバターをまとめて生成
+  function spawnDummyAvatars(count) {
+    const scene = document.querySelector('a-scene');
+    for (let i = 0; i < count; i++) {
+      const pos = getRandomPosition();
+      // 球体を使ったシンプルなダミー
+      const avatar = document.createElement('a-sphere');
+      avatar.setAttribute('radius', 0.4);
+      avatar.setAttribute('color', '#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'));
+      avatar.setAttribute('position', `${pos.x} ${pos.y} ${pos.z}`);
+      avatar.setAttribute('idle-animation', 'amplitude:0.1; speed:1.5');
+      scene.appendChild(avatar);
+    }
+  }
+
+  // 4) ボタンにイベント
+  document.getElementById('spawn-dummies')
+    .addEventListener('click', () => {
+      const n = parseInt(document.getElementById('dummy-count').value, 10) || 1;
+      spawnDummyAvatars(n);
+    });
+</script>
+
+<script>
+  // グローバルに現在位置を保持する変数
+  window.currentPosition = { x:0, y:0, z:0 };
+
+  // 1) カメラの座標を毎フレーム更新するコンポーネント
+  AFRAME.registerComponent('track-position', {
+    tick: function () {
+      const pos = this.el.object3D.position;
+      window.currentPosition = { x: pos.x, y: pos.y, z: pos.z };
+    }
+  });
+
+  // 2) 座席リストとマーカー描画。最初は空
+  const SEAT_POSITIONS = [];
+  const sceneEl = document.querySelector('a-scene');
+
+  // 座席マーカー（小さい青い球）を置く
+  function addSeatMarker(pos) {
+    const mark = document.createElement('a-sphere');
+    mark.setAttribute('radius', 0.1);
+    mark.setAttribute('color', '#00AAFF');
+    mark.setAttribute('position', `${pos.x} ${pos.y} ${pos.z}`);
+    sceneEl.appendChild(mark);
+  }
+
+  // 3) 「座席登録ボタン」
+  document.getElementById('add-seat')
+    .addEventListener('click', () => {
+      const pos = window.currentPosition;
+      // yを座面高さにそろすなら pos.y を固定値にしても OK
+      SEAT_POSITIONS.push({ x: pos.x, y: 0.6, z: pos.z });
+      addSeatMarker({ x: pos.x, y: 0.6, z: pos.z });
+      console.log('座席登録:', SEAT_POSITIONS);
+    });
+
+  // 4) 既存 idle-animation コンポーネント（そのまま再掲）
+  AFRAME.registerComponent('idle-animation', {
+    schema: { amplitude:{type:'number',default:0.1}, speed:{type:'number',default:1} },
+    init() { this.baseY = this.el.object3D.position.y; },
+    tick(t) {
+      this.el.object3D.position.y = this.baseY + this.data.amplitude * Math.sin(t/1000 * this.data.speed);
+    }
+  });
+
+  // パステルカラー生成
+  function getRandomPastelColor(){
+    return `hsl(${Math.random()*360|0},50%,90%)`;
+  }
+
+  // 5) 座席リストからランダムに選んで卵アバターを生成
+  function spawnEggAvatarsOnSeats(count){
+    const available = SEAT_POSITIONS.slice();
+    // シャッフル
+    for(let i=available.length-1; i>0; i--){
+      const j = Math.random()*(i+1)|0;
+      [available[i],available[j]] = [available[j],available[i]];
+    }
+    const n = Math.min(count, available.length);
+    for(let i=0; i<n; i++){
+      const pos = available[i];
+      const egg = document.createElement('a-entity');
+      egg.setAttribute('geometry', {
+        primitive: 'sphere',
+        radius: 0.5,
+        segmentsWidth:18,
+        segmentsHeight:18
+      });
+      egg.setAttribute('scale','1 1.3 1');
+      egg.setAttribute('position',`${pos.x} ${pos.y} ${pos.z}`);
+      egg.setAttribute('material', {
+        color: getRandomPastelColor(),
+        roughness:0.8, metalness:0.1
+      });
+      egg.setAttribute('idle-animation', {
+        amplitude:0.05,
+        speed:1 + Math.random()*0.5
+      });
+      sceneEl.appendChild(egg);
+    }
+  }
+
+  // 6) 「ダミー生成ボタン」に紐づけ
+  document.getElementById('spawn-dummies')
+    .addEventListener('click', () => {
+      const num = parseInt(document.getElementById('dummy-count').value,10)||1;
+      spawnEggAvatarsOnSeats(num);
+    });
+</script>
+
+</body>
+</html>
